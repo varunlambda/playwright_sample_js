@@ -1,3 +1,4 @@
+
 /**
  * Add the file in your test suite to run tests on LambdaTest.
  * Import `test` object from this file in the tests.
@@ -7,27 +8,8 @@ const path = require('path')
 const { chromium, _android } = require('playwright')
 const cp = require('child_process');
 const playwrightClientVersion = cp.execSync('npx playwright --version').toString().trim().split(' ')[1];
-var lambdaTunnel = require("@lambdatest/node-tunnel");
 
 if (process.env.executeOn !== "local"){
-
-//   var tunnelInstance = new lambdaTunnel();
-// var tunnelArguments = {
-//   user: "varunkumarb",
-//   key: "GhGShOYHz1jODWE9qDvkJK4nPDR3n2lc0gNp9VknalhwtUineG",
-//   logFile: "local.log"
-// };
-
-// tunnelInstance
-//   .start(tunnelArguments)
-//   .then(_ => {
-//     console.log("Tunnel is Running Successfully");
-//   })
-//   .catch(err => {
-//     console.log(err);
-//   });
-
-  
 
 // LambdaTest capabilities
 const capabilities = {
@@ -37,8 +19,8 @@ const capabilities = {
     'platform': 'Windows 10',
     'build': 'Playwright JS Build',
     'name': 'Playwright Test',
-    'user': "varunkumarb",
-    'accessKey': "GhGShOYHz1jODWE9qDvkJK4nPDR3n2lc0gNp9VknalhwtUineG",
+    'user': 'varunkumarb',
+    'accessKey': 'GhGShOYHz1jODWE9qDvkJK4nPDR3n2lc0gNp9VknalhwtUineG',
     'network': true,
     'video': true,
     'console': true,
@@ -89,16 +71,12 @@ exports.test = base.test.extend({
         device = await _android.connect(`wss://cdp.lambdatest.com/playwright?capabilities=${encodeURIComponent(JSON.stringify(capabilities))}`);
         await device.shell("am force-stop com.android.chrome");
     
-        // context = await device.launchBrowser({
-        //   permissions: ['camera'],
-        //   noDefaultViewport: true
-        // });
+        context = await device.launchBrowser();
         ltPage = await context.newPage(testInfo.project.use);
       } else {
         // Desktop test
         browser = await chromium.connect(`wss://cdp.lambdatest.com/playwright?capabilities=${encodeURIComponent(JSON.stringify(capabilities))}`)
-        context = await browser.newContext({ acceptDownloads: true, bypassCSP: false, colorScheme: 'light', hasTouch: false, ignoreHTTPSErrors: false, isMobile: false, javaScriptEnabled: true, locale: 'en-US', noDefaultViewport: true, offline: false, serviceWorkers: 'allow' });
-        ltPage = await context.newPage(testInfo.project.use)
+        ltPage = await browser.newPage(testInfo.project.use)
       }
 
       await use(ltPage)
@@ -122,18 +100,12 @@ exports.test = base.test.extend({
       await use(page)
     }
   },
-  
   beforeEach: [
     async ({ page }, use) => {
-      const context = page.context();
-      if (!context._tracingStarted) {
-      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+      await page
+        .context()
+        .tracing.start({ screenshots: true, snapshots: true, sources: true });
       await use();
-      }else{
-        await page.context().tracing.stop({ path: tracePath });
-        await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
-        await use();
-      }
     },
     { auto: true },
   ],
@@ -158,33 +130,6 @@ exports.test = base.test.extend({
     },
     { auto: true },
   ],
-
-  // afterEach: [
-  //   async ({ page }, use, testInfo) => {
-  //     await use();
-      
-  //     const tracePath = `${testInfo.outputDir}/trace.zip`;
-  //     await page.context().tracing.stop({ path: tracePath });
-      
-  //     await testInfo.attach("trace", {
-  //       path: tracePath,
-  //       contentType: "application/zip",
-  //     });
-      
-  //     if (testInfo.status === "failed") {
-  //       const screenshotPath = `${testInfo.outputDir}/screenshot.png`;
-  //       await page.screenshot({ path: screenshotPath });
-      
-  //       await testInfo.attach("screenshot", {
-  //         path: screenshotPath,
-  //         contentType: "image/png",
-  //       });
-  //       await page.context().tracing.stop({ path: tracePath });
-  //     }
-  //   },
-  //   { auto: true },
-  // ],
-
 });
 }else {
   // Fallback to local if `executeOn` is not set to `lambdatest`
