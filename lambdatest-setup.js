@@ -1,0 +1,196 @@
+/**
+ * Add the file in your test suite to run tests on LambdaTest.
+ * Import `test` object from this file in the tests.
+ */
+const base = require('@playwright/test')
+const path = require('path')
+const { chromium, _android } = require('playwright')
+const cp = require('child_process');
+const playwrightClientVersion = cp.execSync('npx playwright --version').toString().trim().split(' ')[1];
+var lambdaTunnel = require("@lambdatest/node-tunnel");
+
+if (process.env.executeOn !== "local"){
+
+//   var tunnelInstance = new lambdaTunnel();
+// var tunnelArguments = {
+//   user: "varunkumarb",
+//   key: "GhGShOYHz1jODWE9qDvkJK4nPDR3n2lc0gNp9VknalhwtUineG",
+//   logFile: "local.log"
+// };
+
+// tunnelInstance
+//   .start(tunnelArguments)
+//   .then(_ => {
+//     console.log("Tunnel is Running Successfully");
+//   })
+//   .catch(err => {
+//     console.log(err);
+//   });
+
+  
+
+// LambdaTest capabilities
+const capabilities = {
+  'browserName': 'Chrome', // Browsers allowed: `Chrome`, `MicrosoftEdge`, `pw-chromium`, `pw-firefox` and `pw-webkit`
+  'browserVersion': 'latest',
+  'LT:Options': {
+    'platform': 'Windows 10',
+    'build': 'Playwright JS Build',
+    'name': 'Playwright Test',
+    'user': "varunkumarb",
+    'accessKey': "GhGShOYHz1jODWE9qDvkJK4nPDR3n2lc0gNp9VknalhwtUineG",
+    'network': true,
+    'video': true,
+    'console': true,
+    'tunnel': false, // Add tunnel configuration if testing locally hosted webpage
+    'tunnelName': '', // Optional
+    'geoLocation': '', // country code can be fetched from https://www.lambdatest.com/capabilities-generator/
+    'playwrightClientVersion': playwrightClientVersion
+  }
+}
+
+// Patching the capabilities dynamically according to the project name.
+const modifyCapabilities = (configName, testName) => {
+  let config = configName.split('@lambdatest')[0]
+
+  // Check if its an android test or a desktop test
+  if (configName.match(/android/)) {
+    let [deviceName, platformVersion, platform] = config.split(':')
+    capabilities['LT:Options']['deviceName'] = deviceName
+    capabilities['LT:Options']['platformVersion'] = platformVersion
+    capabilities['LT:Options']['platformName'] = platform
+    capabilities['LT:Options']['name'] = testName
+    capabilities['LT:Options']['build'] = 'Playwright JS Android Build'
+    capabilities['LT:Options']['isRealMobile'] = true
+
+    delete capabilities.browserName;
+    delete capabilities.browserVersion;
+  } else {
+    // Desktop test
+    let [browserName, browserVersion, platform] = config.split(':')
+    capabilities.browserName = browserName ? browserName : capabilities.browserName
+    capabilities.browserVersion = browserVersion ? browserVersion : capabilities.browserVersion
+    capabilities['LT:Options']['platform'] = platform ? platform : capabilities['LT:Options']['platform']
+    capabilities['LT:Options']['name'] = testName
+  }
+}
+
+exports.test = base.test.extend({
+  page: async ({ page, playwright }, use, testInfo) => {
+    // Configure LambdaTest platform for cross-browser testing
+    let fileName = testInfo.file.split(path.sep).pop()
+    if (testInfo.project.name.match(/lambdatest/)) {
+      modifyCapabilities(testInfo.project.name, `${testInfo.title} - ${fileName}`)
+      let device, context, browser, ltPage;
+
+      // Check if its a desktop or an android test
+      if (testInfo.project.name.match(/android/)) {
+        // Android test
+        device = await _android.connect(`wss://cdp.lambdatest.com/playwright?capabilities=${encodeURIComponent(JSON.stringify(capabilities))}`);
+        await device.shell("am force-stop com.android.chrome");
+    
+        // context = await device.launchBrowser({
+        //   permissions: ['camera'],
+        //   noDefaultViewport: true
+        // });
+        ltPage = await context.newPage(testInfo.project.use);
+      } else {
+        // Desktop test
+        browser = await chromium.connect(`wss://cdp.lambdatest.com/playwright?capabilities=${encodeURIComponent(JSON.stringify(capabilities))}`)
+        context = await browser.newContext({ acceptDownloads: true, bypassCSP: false, colorScheme: 'light', hasTouch: false, ignoreHTTPSErrors: false, isMobile: false, javaScriptEnabled: true, locale: 'en-US', noDefaultViewport: true, offline: false, serviceWorkers: 'allow' });
+        ltPage = await context.newPage(testInfo.project.use)
+      }
+
+      await use(ltPage)
+
+      const testStatus = {
+        action: 'setTestStatus',
+        arguments: {
+          status: testInfo.status,
+          remark: testInfo.error?.stack || testInfo.error?.message,
+        }
+      }
+      await ltPage.evaluate(() => {},
+        `lambdatest_action: ${JSON.stringify(testStatus)}`)
+
+      await ltPage.close()
+      await context?.close();
+      await browser?.close()
+      await device?.close();
+    } else {
+      // Run tests in local in case of local config provided
+      await use(page)
+    }
+  },
+  
+  beforeEach: [
+    async ({ page }, use) => {
+      const context = page.context();
+      if (!context._tracingStarted) {
+      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+      await use();
+      }else{
+        await page.context().tracing.stop({ path: tracePath });
+        await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+        await use();
+      }
+    },
+    { auto: true },
+  ],
+
+  afterEach: [
+    async ({ page }, use, testInfo) => {
+      await use();
+      if (testInfo.status == "failed") {
+        await page
+          .context()
+          .tracing.stop({ path: `${testInfo.outputDir}/trace.zip` });
+        await page.screenshot({ path: `${testInfo.outputDir}/screenshot.png` });
+        await testInfo.attach("screenshot", {
+          path: `${testInfo.outputDir}/screenshot.png`,
+          contentType: "image/png",
+        });
+        await testInfo.attach("trace", {
+          path: `${testInfo.outputDir}/trace.zip`,
+          contentType: "application/zip",
+        });
+      }
+    },
+    { auto: true },
+  ],
+
+  // afterEach: [
+  //   async ({ page }, use, testInfo) => {
+  //     await use();
+      
+  //     const tracePath = `${testInfo.outputDir}/trace.zip`;
+  //     await page.context().tracing.stop({ path: tracePath });
+      
+  //     await testInfo.attach("trace", {
+  //       path: tracePath,
+  //       contentType: "application/zip",
+  //     });
+      
+  //     if (testInfo.status === "failed") {
+  //       const screenshotPath = `${testInfo.outputDir}/screenshot.png`;
+  //       await page.screenshot({ path: screenshotPath });
+      
+  //       await testInfo.attach("screenshot", {
+  //         path: screenshotPath,
+  //         contentType: "image/png",
+  //       });
+  //       await page.context().tracing.stop({ path: tracePath });
+  //     }
+  //   },
+  //   { auto: true },
+  // ],
+
+});
+}else {
+  // Fallback to local if `executeOn` is not set to `lambdatest`
+  exports.test = base.test.extend({
+    page: async ({ page }, use) => {
+      await use(page); // Running locally
+    }
+  });
+}
